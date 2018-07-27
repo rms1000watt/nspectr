@@ -1,0 +1,7 @@
+Dockerfile
+nspectr
+openssl.cnf
+Readme.md
+build.sh
+vendor/*
+!vendor/vendor.json

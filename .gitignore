@@ -1,0 +1,7 @@
+.DS_Store
+vendor/*
+!vendor/vendor.json
+nspectr
+*.crt
+*.key
+certs
