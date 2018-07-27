@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"net"
@@ -9,7 +10,7 @@ import (
 )
 
 const (
-	to = "127.0.0.1:8080"
+	killStr = "XXXXXX"
 )
 
 // Proxy starts the proxy
@@ -31,15 +32,15 @@ func Proxy(cfg Config) {
 			continue
 		}
 
-		go handle(client)
+		go handle(cfg, client)
 	}
 }
 
-func handle(client *net.TCPConn) {
-	log.Debugf("Start: %s->%s", client.RemoteAddr(), to)
-	defer log.Debugf("Done: %s->%s", client.RemoteAddr(), to)
+func handle(cfg Config, client *net.TCPConn) {
+	log.Debugf("Start: %s->%s", client.RemoteAddr(), cfg.BackendAddr)
+	defer log.Debugf("Done: %s->%s", client.RemoteAddr(), cfg.BackendAddr)
 
-	server, err := getServer()
+	server, err := getServer(cfg)
 	if err != nil {
 		log.Error("Failed getting server: ", err)
 		return
@@ -48,8 +49,8 @@ func handle(client *net.TCPConn) {
 	serverDone := make(chan bool)
 	clientDone := make(chan bool)
 
-	go copy(server, client, clientDone)
-	go copy(client, server, serverDone)
+	go cpKill(server, client, clientDone)
+	go cp(client, server, serverDone)
 
 	var waitFor chan bool
 	select {
@@ -67,9 +68,40 @@ func handle(client *net.TCPConn) {
 	<-waitFor
 }
 
-func copy(dst, src net.Conn, done chan bool) {
-	if _, err := io.Copy(dst, src); err != nil {
-		log.Error("io.Copy(dst, src) failed: ", err)
+func cp(dst, src net.Conn, done chan bool) {
+	b := make([]byte, 6)
+	for {
+		_, err := src.Read(b)
+		if err == io.EOF {
+			break
+		}
+		dst.Write(b)
+	}
+
+	if err := src.Close(); err != nil {
+		log.Error("src.Close() failed: ", err)
+	}
+
+	done <- true
+}
+
+func cpKill(dst, src net.Conn, done chan bool) {
+	b := make([]byte, 6)
+	kill := make([]byte, 6)
+	copy(kill[:], killStr)
+
+	for {
+		_, err := src.Read(b)
+		if err == io.EOF {
+			break
+		}
+
+		if bytes.Equal(b, kill) {
+			log.Debug("kill sequence found")
+			break
+		}
+
+		dst.Write(b)
 	}
 
 	if err := src.Close(); err != nil {
@@ -89,8 +121,8 @@ func getListener(addr string) (listener *net.TCPListener, err error) {
 	return net.ListenTCP("tcp", listenAddr)
 }
 
-func getServer() (server *net.TCPConn, err error) {
-	serverAddr, err := net.ResolveTCPAddr("tcp", to)
+func getServer(cfg Config) (server *net.TCPConn, err error) {
+	serverAddr, err := net.ResolveTCPAddr("tcp", cfg.BackendAddr)
 	if err != nil {
 		log.Debug("Failed resolving tcp addr: ", err)
 		return

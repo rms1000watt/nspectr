@@ -20,6 +20,7 @@ func init() {
 
 	proxyCmd.Flags().StringVar(&proxyCfg.Host, "host", "", "Host to listen on")
 	proxyCmd.Flags().IntVar(&proxyCfg.Port, "port", 7100, "Port to listen on")
+	proxyCmd.Flags().StringVar(&proxyCfg.BackendAddr, "backend-addr", "127.0.0.1:8080", "Address of backend to proxy to")
 
 	setFlagsFromEnv(proxyCmd)
 }

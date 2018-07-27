@@ -2,13 +2,20 @@ version: '3.6'
 services:
   nspectr:
     container_name: nspectr
-    command: serve
+    command: proxy
     environment:
-      PORT: 8080
+      PORT: 7100
       LOG_LEVEL: debug
-      CERTS_PATH: /certs
-    image: nspectr:latest
+      BACKEND_ADDR: echo:5678
+    image: rms1000watt/nspectr:latest
     ports:
-    - 8080:8080
+    - 7100:7100
     volumes:
     - ./certs:/certs
+
+  echo:
+    container_name: echo
+    command: -text="hello world"
+    image: hashicorp/http-echo
+    ports:
+    - 5678:5678
