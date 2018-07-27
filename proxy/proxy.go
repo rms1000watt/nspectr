@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"sync"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -17,73 +16,85 @@ const (
 func Proxy(cfg Config) {
 	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
 
-	listener, err := net.Listen("tcp", addr)
+	listener, err := getListener(addr)
 	if err != nil {
-		log.Error("Failed creating listener: ", err)
+		log.Error("Failed getting listener: ", err)
 		return
 	}
-
-	doneCh := make(chan bool)
-	go run(listener, doneCh)
+	defer listener.Close()
 
 	log.Info("Listening on: ", addr)
-	<-doneCh
-}
-
-func run(listener net.Listener, doneCh chan bool) {
 	for {
-		select {
-		case <-doneCh:
-			return
-		default:
-			connection, err := listener.Accept()
-			if err != nil {
-				log.Error("Failed accepting connection: ", err)
-				continue
-			}
-
-			go handle(connection, doneCh)
+		client, err := listener.AcceptTCP()
+		if err != nil {
+			log.Error("Failed accepting client: ", err)
+			continue
 		}
+
+		go handle(client)
 	}
 }
 
-func handle(connection net.Conn, doneCh chan bool) {
-	log.Debug("Start: Handling: ", connection)
-	defer log.Debug("Done: Handling: ", connection)
+func handle(client *net.TCPConn) {
+	log.Debugf("Start: %s->%s", client.RemoteAddr(), to)
+	defer log.Debugf("Done: %s->%s", client.RemoteAddr(), to)
 
-	defer connection.Close()
-	remote, err := net.Dial("tcp", to)
+	server, err := getServer()
 	if err != nil {
-		log.Error("Failed dialing: ", err)
+		log.Error("Failed getting server: ", err)
 		return
 	}
-	defer remote.Close()
 
-	wg := &sync.WaitGroup{}
-	wg.Add(2)
-	go copy(remote, connection, wg, doneCh)
-	go copy(connection, remote, wg, doneCh)
-	wg.Wait()
-}
+	serverDone := make(chan bool)
+	clientDone := make(chan bool)
 
-func copy(from, to net.Conn, wg *sync.WaitGroup, doneCh chan bool) {
-	defer wg.Done()
+	go copy(server, client, clientDone)
+	go copy(client, server, serverDone)
+
+	var waitFor chan bool
 	select {
-	case <-doneCh:
-		return
-	default:
-		if _, err := io.Copy(to, from); err != nil {
-			log.Error("io.Copy failed: ", err)
-			stop(doneCh)
-			return
-		}
+	case <-clientDone:
+		server.SetLinger(0)
+		server.CloseRead()
+		server.CloseWrite()
+		waitFor = serverDone
+	case <-serverDone:
+		client.CloseRead()
+		client.CloseWrite()
+		waitFor = clientDone
 	}
+
+	<-waitFor
 }
 
-func stop(doneCh chan bool) {
-	if doneCh == nil {
+func copy(dst, src net.Conn, done chan bool) {
+	if _, err := io.Copy(dst, src); err != nil {
+		log.Error("io.Copy(dst, src) failed: ", err)
+	}
+
+	if err := src.Close(); err != nil {
+		log.Error("src.Close() failed: ", err)
+	}
+
+	done <- true
+}
+
+func getListener(addr string) (listener *net.TCPListener, err error) {
+	listenAddr, err := net.ResolveTCPAddr("tcp", addr)
+	if err != nil {
+		log.Debug("Failed resolving tcp addr: ", err)
 		return
 	}
-	close(doneCh)
-	doneCh = nil
+
+	return net.ListenTCP("tcp", listenAddr)
+}
+
+func getServer() (server *net.TCPConn, err error) {
+	serverAddr, err := net.ResolveTCPAddr("tcp", to)
+	if err != nil {
+		log.Debug("Failed resolving tcp addr: ", err)
+		return
+	}
+
+	return net.DialTCP("tcp", nil, serverAddr)
 }

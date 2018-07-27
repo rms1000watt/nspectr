@@ -11,6 +11,7 @@ This is the starting point for a Golang project with Gometalinter, Govendor, TDD
 - [Run](#run)
 - [cURL](#curl)
 - [TODO](#todo)
+- [References](#references)
 
 ## Install
 
@@ -46,3 +47,9 @@ curl -H "Origin:https://localhost" --cacert certs/ca.crt -d '{"id":"70640AC2-E6F
 ## TODO
 
 - [ ] Travis ci
+
+## References
+
+- https://gist.github.com/ericflo/7dcf4179c315d8bd714c
+- https://gist.github.com/jbardin/821d08cb64c01c84b81a
+- https://medium.com/learning-the-go-programming-language/streaming-io-in-go-d93507931185
